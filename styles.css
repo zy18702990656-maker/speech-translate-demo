@@ -202,6 +202,14 @@ code{
 .alert-warn{background:#fff8ea;border-color:#f0ddb8;color:#8a5b00}
 .alert-lock{background:#eef5fd;border-color:rgba(8,70,140,.18);color:var(--brand-deep)}
 .alert-lock code{background:#fff}
+.alert-origin{background:#f3f8fe;border-color:rgba(8,70,140,.16);color:var(--ink-2)}
+.alert-origin.ok{background:#edf9f2;border-color:#bfe4cf;color:#0b6d41}
+.alert-origin.no{background:#fff8ea;border-color:#f0ddb8;color:#8a5b00}
+.alert-origin b{font-weight:700}
+.alert-origin .og{
+  display:block;margin-top:4px;font-family:"SF Mono",ui-monospace,Menlo,monospace;
+  font-size:11px;word-break:break-all;opacity:.86;
+}
 
 /* 鉴权面板：默认对访客隐藏，仅工程师解锁后显示 */
 .auth-card{display:none}

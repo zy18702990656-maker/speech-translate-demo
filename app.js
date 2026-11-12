@@ -39,7 +39,7 @@ const ERR_MSG = {
 
 const $ = id => document.getElementById(id);
 const el = {};
-['authCard','hideAuth',
+['authCard','hideAuth','credState',
  'appid','secretid','secretkey','toggleKey','remember','clearKey','source','target','transModel','langNote',
  'enableTts','ttsBody','voiceType','customVoiceWrap','customVoice','codec','speed','speedVal','volume','volumeVal',
  'advHead','advBody','advChev','hotword','vad','maxSpeak','filterDirty','filterModal','filterPunc','convertNum','noise','domain',
@@ -116,11 +116,26 @@ function loadCred() {
     if (v.secretkey) el.secretkey.value = v.secretkey;
   } catch (e) {}
 }
+function hasCred() {
+  return !!(el.appid.value.trim() && el.secretid.value.trim() && el.secretkey.value.trim());
+}
+/* localStorage 按 origin 隔离：本地调试地址与线上地址需各填一次，这里显式提示 */
+function refreshCredState() {
+  const og = location.origin;
+  if (hasCred()) {
+    el.credState.className = 'alert alert-origin ok';
+    el.credState.innerHTML = `<b>当前站点已保存配置 ✓</b> 实时链路可用。<span class="og">${escapeHtml(og)}</span>`;
+  } else {
+    el.credState.className = 'alert alert-origin no';
+    el.credState.innerHTML = `<b>当前站点尚未保存配置</b>　localStorage 按站点隔离，本地调试地址与线上地址需各填一次。<span class="og">${escapeHtml(og)}</span>`;
+  }
+}
 function saveCred() {
-  if (!el.remember.checked) return;
+  if (!el.remember.checked) { refreshCredState(); return; }
   localStorage.setItem(LS, JSON.stringify({
     appid: el.appid.value.trim(), secretid: el.secretid.value.trim(), secretkey: el.secretkey.value.trim()
   }));
+  refreshCredState();
 }
 
 /* ================= 语言下拉 ================= */
@@ -554,6 +569,7 @@ function validate() {
     if (!authVisible()) {
       // 访客侧：不暴露"缺少密钥"这类配置细节，直接平滑切到演示模式
       status('本设备未配置实时链路，已为你切换到演示模式回放。现场实时体验请联系腾讯云同学开启。');
+      toast('本站点未保存配置 → 已切演示模式（配置按站点隔离）');
       setTimeout(() => { if (!S.running) el.mockBtn.click(); }, 260);
       return false;
     }
@@ -742,7 +758,8 @@ el.toggleKey.onclick = () => {
 el.clearKey.onclick = () => {
   localStorage.removeItem(LS);
   el.appid.value = el.secretid.value = el.secretkey.value = '';
-  toast('本机已保存的密钥已清除');
+  refreshCredState();
+  toast('本站点已保存的配置已清除');
 };
 el.enableTts.onchange = () => {
   el.ttsBody.classList.toggle('collapsed', !el.enableTts.checked);
@@ -759,13 +776,17 @@ const toggle = (head, body, chev) => head.onclick = () => {
 toggle(el.advHead, el.advBody, el.advChev);
 toggle(el.logHead, el.logBody, el.logChev);
 
-['appid', 'secretid', 'secretkey'].forEach(k => el[k].onchange = saveCred);
+['appid', 'secretid', 'secretkey'].forEach(k => {
+  el[k].onchange = saveCred;
+  el[k].oninput = refreshCredState;
+});
 
 /* ========= 鉴权面板的显示控制（默认对客户隐藏） ========= */
 function authVisible() { return el.authCard.classList.contains('show'); }
 function setAuth(show) {
   el.authCard.classList.toggle('show', show);
   if (show) {
+    refreshCredState();
     el.authCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     toast('配置面板已解锁 —— 演示前记得点「隐藏」');
   } else {
@@ -793,8 +814,9 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && authVisibl
 /* ================= 启动 ================= */
 initLang();
 loadCred();
+refreshCredState();
 checkHash();
-if (el.appid.value.trim() && el.secretid.value.trim() && el.secretkey.value.trim()) {
+if (hasCred()) {
   status('实时链路已就绪，点「开始说话」即可现场体验；也可先点「演示模式」看效果回放。', 'ok');
 } else {
   status('点「演示模式」可直接查看「边说边译」效果回放，无需任何配置。');
