@@ -29,7 +29,7 @@ const TARGET_MAP = {
 const TTS_OK_TARGET = ['zh', 'en', 'zh_en'];
 
 const ERR_MSG = {
-  6000: '音频发送过快（需 1:1 实时率）', 6001: '参数不合法', 6002: '鉴权失败，请检查 AppID / SecretID / SecretKey',
+  6000: '音频发送过快（需 1:1 实时率）', 6001: '参数不合法', 6002: '鉴权失败（签名或账号配置异常）',
   6003: '账号未开通语音识别服务，请先在控制台开通', 6004: '资源包耗尽，请开通后付费或购买资源包',
   6005: '账户欠费已停止服务', 6006: '并发超限（默认 5 路）', 6007: '音频解码失败',
   6008: '客户端超过 15 秒未发送音频数据', 6009: '客户端连接断开', 6010: '上传了未知文本消息',
@@ -39,7 +39,8 @@ const ERR_MSG = {
 
 const $ = id => document.getElementById(id);
 const el = {};
-['appid','secretid','secretkey','toggleKey','remember','clearKey','source','target','transModel','langNote',
+['authCard','hideAuth',
+ 'appid','secretid','secretkey','toggleKey','remember','clearKey','source','target','transModel','langNote',
  'enableTts','ttsBody','voiceType','customVoiceWrap','customVoice','codec','speed','speedVal','volume','volumeVal',
  'advHead','advBody','advChev','hotword','vad','maxSpeak','filterDirty','filterModal','filterPunc','convertNum','noise','domain',
  'connPill','connText','mLatency','mSentences','mDuration','mChars','langBadge','srcColTitle','tgtColTitle',
@@ -220,6 +221,7 @@ async function buildUrl() {
   const sig = await hmacSha1B64(sk, origin);
   const url = `wss://${origin}&signature=${encodeURIComponent(sig)}`;
   const masked = url
+    .replace(`${PATH}${appid}?`, `${PATH}${appid.slice(0, 4)}******?`)
     .replace(/secretid=[^&]+/, 'secretid=AKID****************')
     .replace(/signature=[^&]+/, 'signature=****************');
   el.urlBox.textContent = masked;
@@ -309,7 +311,7 @@ async function openWs() {
 
   setConn('wait', '握手中');
   status('正在建立 WebSocket 连接…');
-  log(T.up, `CONNECT wss://${HOST}${PATH}${el.appid.value.trim()} …`);
+  log(T.up, `CONNECT wss://${HOST}${PATH}${el.appid.value.trim().slice(0, 4)}****** …`);
 
   return new Promise(resolve => {
     let ws;
@@ -371,7 +373,7 @@ async function openWs() {
 
     ws.onerror = () => {
       log(T.err, 'WebSocket error');
-      if (!settled) { settled = true; status('连接失败：请检查网络、AppID/密钥，以及是否已开通语音识别服务。', 'err'); setConn('err', '连接失败'); resolve(null); }
+      if (!settled) { settled = true; status('连接失败：请检查网络连通性与账号服务开通状态，稍后重试。', 'err'); setConn('err', '连接失败'); resolve(null); }
     };
     ws.onclose = e => {
       log(T.down, `closed code=${e.code}`);
@@ -549,6 +551,12 @@ function validate() {
   if (!el.secretid.value.trim()) miss.push('SecretID');
   if (!el.secretkey.value.trim()) miss.push('SecretKey');
   if (miss.length) {
+    if (!authVisible()) {
+      // 访客侧：不暴露"缺少密钥"这类配置细节，直接平滑切到演示模式
+      status('本设备未配置实时链路，已为你切换到演示模式回放。现场实时体验请联系腾讯云同学开启。');
+      setTimeout(() => { if (!S.running) el.mockBtn.click(); }, 260);
+      return false;
+    }
     status(`请先填写 ${miss.join(' / ')}。没有密钥可以点右侧「演示模式」查看交互效果。`, 'err');
     toast('缺少 ' + miss.join(' / '));
     return false;
@@ -655,7 +663,7 @@ function mockRun() {
   const tick = () => {
     if (idx >= list.length) {
       clearInterval(S.mockTimer); S.mockTimer = null;
-      status(`演示模式播放完毕：${S.finalSentences} 句双语字幕。接入真实密钥即可直连接口实时体验。`, 'ok');
+      status(`演示模式播放完毕：${S.finalSentences} 句双语字幕。实际链路为 WebSocket 直连，可现场实时体验。`, 'ok');
       setConn('', '未连接');
       finishUI();
       return;
@@ -692,9 +700,9 @@ el.mockBtn.onclick = () => {
   el.mockBtn.classList.add('on');
   el.voiceIdTxt.textContent = uuid();
   setConn('on', '演示模式');
-  el.urlBox.textContent = `wss://${HOST}${PATH}<AppID>?expired=…&nonce=…&secretid=AKID****&source=zh&target=en&timestamp=…&trans_model=hunyuan-translation-lite&voice_format=1&voice_id=…&signature=****\n\n（演示模式为本地脚本回放，不产生真实请求与计费）`;
+  el.urlBox.textContent = `wss://${HOST}${PATH}<AppID>?expired=…&nonce=…&secretid=AKID******&source=zh&target=en&timestamp=…&trans_model=hunyuan-translation-lite&voice_format=1&voice_id=…&signature=******\n\n（演示模式为本地脚本回放，不产生真实请求与计费）`;
   log(T.down, '演示模式启动：本地脚本回放，不发起真实请求');
-  status('演示模式：正在回放一段「中 → 英」边说边译效果，真实链路请填入密钥后点「开始说话」。');
+  status('演示模式：正在回放一段「中 → 英」边说边译效果。点「开始说话」可接入真实链路现场实时体验。');
   mockRun();
 };
 
@@ -753,9 +761,44 @@ toggle(el.logHead, el.logBody, el.logChev);
 
 ['appid', 'secretid', 'secretkey'].forEach(k => el[k].onchange = saveCred);
 
+/* ========= 鉴权面板的显示控制（默认对客户隐藏） ========= */
+function authVisible() { return el.authCard.classList.contains('show'); }
+function setAuth(show) {
+  el.authCard.classList.toggle('show', show);
+  if (show) {
+    el.authCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    toast('配置面板已解锁 —— 演示前记得点「隐藏」');
+  } else {
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    toast('配置面板已隐藏');
+  }
+}
+el.hideAuth.onclick = () => setAuth(false);
+// 暗门 1：地址栏 #config / #admin
+function checkHash() {
+  if (/^#(config|admin|setup)$/i.test(location.hash)) setAuth(true);
+}
+window.addEventListener('hashchange', checkHash);
+// 暗门 2：连点左上角图标 5 次
+let tapCount = 0, tapTimer = null;
+document.querySelector('.brand-mark').addEventListener('click', () => {
+  tapCount++;
+  clearTimeout(tapTimer);
+  tapTimer = setTimeout(() => tapCount = 0, 1200);
+  if (tapCount >= 5) { tapCount = 0; setAuth(true); }
+});
+// Esc 快速收起
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && authVisible()) setAuth(false); });
+
 /* ================= 启动 ================= */
 initLang();
 loadCred();
+checkHash();
+if (el.appid.value.trim() && el.secretid.value.trim() && el.secretkey.value.trim()) {
+  status('实时链路已就绪，点「开始说话」即可现场体验；也可先点「演示模式」看效果回放。', 'ok');
+} else {
+  status('点「演示模式」可直接查看「边说边译」效果回放，无需任何配置。');
+}
 document.querySelector('.preset[data-preset="meeting"]').classList.add('active');
 if (location.protocol !== 'https:' && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
   status('当前为非安全上下文，麦克风与签名计算不可用，请用 HTTPS 访问。可先体验「演示模式」。', 'err');

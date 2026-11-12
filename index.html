@@ -71,11 +71,14 @@
       </div>
     </section>
 
-    <!-- 鉴权 -->
-    <section class="card">
+    <!-- 鉴权（默认对客户隐藏，仅工程师通过暗门解锁） -->
+    <section class="card auth-card" id="authCard">
       <div class="card-head">
         <h2>接口鉴权</h2>
-        <span class="card-hint">仅存本机浏览器</span>
+        <div class="head-tools">
+          <span class="card-hint">仅存本机浏览器</span>
+          <button class="btn-ghost sm" id="hideAuth" type="button">隐藏</button>
+        </div>
       </div>
       <div class="card-body">
         <div class="field">
@@ -103,6 +106,9 @@
         </p>
         <div class="alert alert-warn">
           生产环境请由业务后端签名、前端只拿临时 URL，切勿把 SecretKey 下发到客户端。
+        </div>
+        <div class="alert alert-lock">
+          此面板默认对访客隐藏。再次打开：地址栏加 <code>#config</code>，或连点左上角图标 5 次。
         </div>
       </div>
     </section>
@@ -384,7 +390,7 @@
             <code id="voiceIdTxt">—</code>
           </div>
         </div>
-        <div class="console-status" id="statusLine">准备就绪。填入密钥后点「开始说话」直连接口；无密钥可先点「演示模式」看效果。</div>
+        <div class="console-status" id="statusLine">准备就绪。点「开始说话」现场实时体验，或点「演示模式」查看「边说边译」效果回放。</div>
       </div>
     </section>
 
@@ -396,7 +402,7 @@
       </div>
       <div class="card-body collapsed" id="logBody">
         <div class="field">
-          <label>握手 URL（签名与 SecretID 已脱敏）</label>
+          <label>握手 URL（账号与签名等敏感参数已脱敏）</label>
           <pre class="url-box" id="urlBox">尚未发起连接</pre>
         </div>
         <div class="field">
@@ -418,7 +424,7 @@
         <span class="foot-sep">|</span>
         <a href="https://buy.cloud.tencent.com/asr" target="_blank" rel="noopener">资源包与并发扩容</a>
       </div>
-      <div class="foot-note">本页为能力演示用的纯前端 Demo，不存储任何音频与密钥。实际集成请参考官方 Go / Python / Java SDK。</div>
+      <div class="foot-note">本页为能力演示用的纯前端 Demo，音频仅在内存中处理、不做任何存储或留存。实际集成请参考官方 Go / Python / Java SDK。</div>
     </footer>
 
   </div>
