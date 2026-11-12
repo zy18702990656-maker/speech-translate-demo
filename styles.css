@@ -247,7 +247,7 @@ code{
 .spec li b{color:var(--brand-deep);font-weight:700;font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:12px}
 
 /* ---- 指标 ---- */
-.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .metric{
   background:#fff;border:1px solid var(--line);border-radius:12px;
   padding:13px 16px;box-shadow:var(--shadow);
@@ -391,7 +391,6 @@ code{
 /* ---- 响应式 ---- */
 @media (max-width:1320px){
   :root{--panel-w:420px}
-  .metrics{grid-template-columns:repeat(2,1fr)}
 }
 @media (max-width:1040px){
   .layout{grid-template-columns:1fr;padding:16px 14px 32px}
@@ -422,6 +421,7 @@ code{
 }
 @media (max-width:560px){
   .preset-grid,.row-2.gap{grid-template-columns:1fr}
+  .metrics{grid-template-columns:1fr}
   .m-value{font-size:21px}
   .btn-primary{flex:1;justify-content:center}
 }

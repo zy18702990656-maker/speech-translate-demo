@@ -43,7 +43,7 @@ const el = {};
  'appid','secretid','secretkey','toggleKey','remember','clearKey','source','target','transModel','langNote',
  'enableTts','ttsBody','voiceType','customVoiceWrap','customVoice','codec','speed','speedVal','volume','volumeVal',
  'advHead','advBody','advChev','hotword','vad','maxSpeak','filterDirty','filterModal','filterPunc','convertNum','noise','domain',
- 'connPill','connText','mLatency','mSentences','mDuration','mChars','langBadge','srcColTitle','tgtColTitle',
+ 'connPill','connText','mSentences','mDuration','mChars','langBadge','srcColTitle','tgtColTitle',
  'srcList','tgtList','copyBtn','clearBtn','micBtn','micLabel','fileBtn','fileInput','mockBtn',
  'meterFill','meterTxt','voiceIdTxt','statusLine','logHead','logBody','logChev','urlBox','logBox','logClear','toast']
  .forEach(k => el[k] = $(k));
@@ -249,7 +249,6 @@ function clearSubs() {
   el.srcList.innerHTML = ''; el.tgtList.innerHTML = '';
   el.mSentences.innerHTML = '0<i>句</i>';
   el.mChars.innerHTML = '0<i>字</i>';
-  el.mLatency.innerHTML = '—<i>ms</i>';
   el.mDuration.innerHTML = '0.0<i>s</i>';
 }
 function fmtTime(ms) {
@@ -363,10 +362,7 @@ async function openWs() {
         return;
       }
       if (m.result) {
-        if (!S.firstAt) {
-          S.firstAt = performance.now();
-          el.mLatency.innerHTML = `${Math.round(S.firstAt - S.startAt)}<i>ms</i>`;
-        }
+        if (!S.firstAt) S.firstAt = performance.now();
         renderSentence(m.sentence_id || 'single', m.result);
       }
       if (m.final === 1) {
@@ -691,10 +687,7 @@ function mockRun() {
     const sCut = Math.ceil(sTotal * prog);
     const tCut = Math.ceil(tTotal * Math.max(0, prog - 0.18) / 0.82);
     const end = prog >= 1;
-    if (!S.firstAt) {
-      S.firstAt = performance.now();
-      el.mLatency.innerHTML = `${Math.round(320 + Math.random() * 90)}<i>ms</i>`;
-    }
+    if (!S.firstAt) S.firstAt = performance.now();
     renderSentence(sid, {
       source: 'zh', target: 'en',
       source_text: item.s.slice(0, sCut),
