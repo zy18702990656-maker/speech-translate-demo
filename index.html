@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>实时语音翻译 WebSocket · 能力体验台 | 腾讯云语音识别</title>
+<meta name="description" content="腾讯云语音识别 - 实时语音翻译（WebSocket）在线体验 Demo，边说边译，支持 9 种语言互译与译文语音合成播报。">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="bg-grid" aria-hidden="true"></div>
+<div class="bg-glow" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="26" height="26">
+          <path d="M6 20V12a2 2 0 0 1 4 0v8a2 2 0 0 1-4 0Z" fill="#0b6fc4"/>
+          <path d="M13 24V8a2 2 0 0 1 4 0v16a2 2 0 0 1-4 0Z" fill="#05528f"/>
+          <path d="M20 18v-4a2 2 0 0 1 4 0v4a2 2 0 0 1-4 0Z" fill="#4aa3e8"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-title">实时语音翻译 <span class="brand-tag">WebSocket</span></div>
+        <div class="brand-sub">腾讯云语音识别 ASR · 边说边译能力体验台</div>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <div class="conn-pill" id="connPill">
+        <span class="dot" id="connDot"></span>
+        <span id="connText">未连接</span>
+      </div>
+      <a class="doc-link" href="https://cloud.tencent.com/document/product/1093/127565" target="_blank" rel="noopener">接口文档</a>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ============ 左侧参数区 ============ -->
+  <aside class="panel">
+
+    <!-- 场景预设 -->
+    <section class="card">
+      <div class="card-head">
+        <h2>场景预设</h2>
+        <span class="card-hint">一键套用推荐参数</span>
+      </div>
+      <div class="card-body">
+        <div class="preset-grid">
+          <button class="preset" data-preset="meeting">
+            <span class="preset-name">跨国会议同传</span>
+            <span class="preset-desc">中 → 英 · 标准版模型</span>
+          </button>
+          <button class="preset" data-preset="service">
+            <span class="preset-name">跨境在线客服</span>
+            <span class="preset-desc">中英混说 · 自动互译</span>
+          </button>
+          <button class="preset" data-preset="live">
+            <span class="preset-name">出海直播带货</span>
+            <span class="preset-desc">中 → 日 · 轻量版低延迟</span>
+          </button>
+          <button class="preset" data-preset="tts">
+            <span class="preset-name">AI 同声传译</span>
+            <span class="preset-desc">中 → 英 · 译文语音播报</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 鉴权 -->
+    <section class="card">
+      <div class="card-head">
+        <h2>接口鉴权</h2>
+        <span class="card-hint">仅存本机浏览器</span>
+      </div>
+      <div class="card-body">
+        <div class="field">
+          <label for="appid">AppID <i class="req">必填</i></label>
+          <input id="appid" type="text" placeholder="例如 1259220000" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="secretid">SecretID <i class="req">必填</i></label>
+          <input id="secretid" type="text" placeholder="AKID..." autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="secretkey">SecretKey <i class="req">必填</i></label>
+          <div class="input-wrap">
+            <input id="secretkey" type="password" placeholder="••••••••••••••••" autocomplete="off" spellcheck="false">
+            <button class="eye" id="toggleKey" type="button" title="显示/隐藏">显示</button>
+          </div>
+        </div>
+        <div class="row-2">
+          <label class="check"><input type="checkbox" id="remember" checked><span>记住密钥（localStorage）</span></label>
+          <button class="btn-ghost sm" id="clearKey" type="button">清除</button>
+        </div>
+        <p class="note">
+          密钥仅用于在<strong>本浏览器内</strong>计算 HMAC-SHA1 签名并直连 <code>wss://asr.cloud.tencent.com</code>，
+          本页面无任何后端服务器，不会上传密钥。<a href="https://console.cloud.tencent.com/cam/capi" target="_blank" rel="noopener">获取密钥 →</a>
+        </p>
+        <div class="alert alert-warn">
+          生产环境请由业务后端签名、前端只拿临时 URL，切勿把 SecretKey 下发到客户端。
+        </div>
+      </div>
+    </section>
+
+    <!-- 语言 -->
+    <section class="card">
+      <div class="card-head">
+        <h2>语言与模型</h2>
+        <span class="card-hint">source / target / trans_model</span>
+      </div>
+      <div class="card-body">
+        <div class="row-2 gap">
+          <div class="field">
+            <label for="source">源语言 source</label>
+            <select id="source"></select>
+          </div>
+          <div class="field">
+            <label for="target">目标语言 target</label>
+            <select id="target"></select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="transModel">翻译模型 trans_model</label>
+          <select id="transModel">
+            <option value="hunyuan-translation-lite">hunyuan-translation-lite · 轻量版（低延迟）</option>
+            <option value="hunyuan-translation">hunyuan-translation · 标准版（高质量）</option>
+          </select>
+        </div>
+        <p class="note" id="langNote">source 与 target 同为 <code>zh_en</code> 时，中文自动译英文、英文自动译中文。</p>
+      </div>
+    </section>
+
+    <!-- TTS -->
+    <section class="card">
+      <div class="card-head">
+        <h2>译文语音合成</h2>
+        <label class="switch">
+          <input type="checkbox" id="enableTts">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="card-body collapsed" id="ttsBody">
+        <div class="row-2 gap">
+          <div class="field">
+            <label for="voiceType">音色 voice_type</label>
+            <select id="voiceType">
+              <option value="101001">101001 · 智瑜（中文女）</option>
+              <option value="101002">101002 · 智聆（中文女）</option>
+              <option value="101004">101004 · 智云（中文男）</option>
+              <option value="101008">101008 · 智琪（中文女·客服）</option>
+              <option value="101050">101050 · WeJack（英文男）</option>
+              <option value="101051" selected>101051 · WeRose（英文女）</option>
+              <option value="200000000">200000000 · 一句话声音复刻</option>
+              <option value="__custom">自定义 ID…</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="codec">返回格式 codec</label>
+            <select id="codec">
+              <option value="pcm">pcm（流式即时播报）</option>
+              <option value="mp3">mp3（合成完整播放）</option>
+            </select>
+          </div>
+        </div>
+        <div class="field hidden" id="customVoiceWrap">
+          <label for="customVoice">自定义 voice_type / fast_voice_type</label>
+          <input id="customVoice" type="text" placeholder="音色 ID 或复刻音色字符串" autocomplete="off">
+        </div>
+        <div class="row-2 gap">
+          <div class="field">
+            <label for="speed">语速 speed <b class="val" id="speedVal">0</b></label>
+            <input id="speed" type="range" min="-2" max="6" step="0.25" value="0">
+          </div>
+          <div class="field">
+            <label for="volume">音量 volume <b class="val" id="volumeVal">0</b></label>
+            <input id="volume" type="range" min="-10" max="10" step="1" value="0">
+          </div>
+        </div>
+        <p class="note">仅当 target 为 <code>zh</code> / <code>en</code> / <code>zh_en</code> 时生效；音色需与目标语种一致。单会话合成上限 10000 字。</p>
+      </div>
+    </section>
+
+    <!-- 高级 -->
+    <section class="card">
+      <div class="card-head clickable" id="advHead">
+        <h2>识别优化参数</h2>
+        <span class="chev" id="advChev">展开</span>
+      </div>
+      <div class="card-body collapsed" id="advBody">
+        <div class="field">
+          <label for="hotword">临时热词 hotword_list</label>
+          <input id="hotword" type="text" placeholder="腾讯云|10,混元|11,ASR|5" autocomplete="off">
+          <span class="sub">格式「热词|权重」，逗号分隔，最多 128 个；权重 1-11 或 100。</span>
+        </div>
+        <div class="row-2 gap">
+          <div class="field">
+            <label for="vad">断句阈值 vad_silence_time</label>
+            <input id="vad" type="number" min="500" max="2000" step="100" value="1000">
+          </div>
+          <div class="field">
+            <label for="maxSpeak">强制断句 max_speak_time</label>
+            <input id="maxSpeak" type="number" min="5000" max="90000" step="1000" value="10000">
+          </div>
+        </div>
+        <div class="row-2 gap">
+          <div class="field">
+            <label for="filterDirty">脏词 filter_dirty</label>
+            <select id="filterDirty">
+              <option value="0">0 · 不过滤</option>
+              <option value="1">1 · 过滤</option>
+              <option value="2">2 · 替换为 *</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="filterModal">语气词 filter_modal</label>
+            <select id="filterModal">
+              <option value="0">0 · 不过滤</option>
+              <option value="1">1 · 部分过滤</option>
+              <option value="2">2 · 严格过滤</option>
+            </select>
+          </div>
+        </div>
+        <div class="row-2 gap">
+          <div class="field">
+            <label for="filterPunc">句末句号 filter_punc</label>
+            <select id="filterPunc">
+              <option value="0">0 · 保留</option>
+              <option value="1">1 · 过滤</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="convertNum">数字转换 convert_num_mode</label>
+            <select id="convertNum">
+              <option value="1">1 · 智能转阿拉伯数字</option>
+              <option value="0">0 · 输出中文数字</option>
+              <option value="3">3 · 含数学相关转换</option>
+            </select>
+          </div>
+        </div>
+        <div class="row-2 gap">
+          <div class="field">
+            <label for="noise">噪音阈值 noise_threshold</label>
+            <input id="noise" type="number" min="-2" max="2" step="0.1" value="0">
+          </div>
+          <div class="field">
+            <label for="domain">领域 domain</label>
+            <select id="domain">
+              <option value="">默认（不传）</option>
+              <option value="1">1 · 科技</option>
+              <option value="2">2 · 电影</option>
+              <option value="3">3 · 歌曲</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>音频规格</h2>
+        <span class="card-hint">自动转码</span>
+      </div>
+      <div class="card-body">
+        <ul class="spec">
+          <li><span>采样率</span><b>16000 Hz</b></li>
+          <li><span>采样精度</span><b>16 bit</b></li>
+          <li><span>声道</span><b>单声道 mono</b></li>
+          <li><span>编码 voice_format</span><b>1 · pcm</b></li>
+          <li><span>发包节奏</span><b>200ms / 6400 字节</b></li>
+        </ul>
+        <p class="note">麦克风与上传音频均由本页自动重采样为 16k/16bit/单声道，并按 1:1 实时率发送。</p>
+      </div>
+    </section>
+
+  </aside>
+
+  <!-- ============ 右侧工作区 ============ -->
+  <div class="stage">
+
+    <!-- 指标 -->
+    <div class="metrics">
+      <div class="metric">
+        <span class="m-label">首字延迟</span>
+        <span class="m-value" id="mLatency">—<i>ms</i></span>
+      </div>
+      <div class="metric">
+        <span class="m-label">已出句数</span>
+        <span class="m-value" id="mSentences">0<i>句</i></span>
+      </div>
+      <div class="metric">
+        <span class="m-label">音频时长</span>
+        <span class="m-value" id="mDuration">0.0<i>s</i></span>
+      </div>
+      <div class="metric">
+        <span class="m-label">译文字数</span>
+        <span class="m-value" id="mChars">0<i>字</i></span>
+      </div>
+    </div>
+
+    <!-- 字幕 -->
+    <section class="card card-stage">
+      <div class="card-head">
+        <h2>实时双语字幕</h2>
+        <div class="head-tools">
+          <span class="badge" id="langBadge">中文 → 英文</span>
+          <button class="btn-ghost sm" id="copyBtn" type="button">复制全文</button>
+          <button class="btn-ghost sm" id="clearBtn" type="button">清空</button>
+        </div>
+      </div>
+      <div class="card-body no-pad">
+        <div class="subs">
+          <div class="sub-col">
+            <div class="sub-col-head">
+              <span class="col-dot src"></span>
+              <span id="srcColTitle">识别原文 source_text</span>
+            </div>
+            <div class="sub-list" id="srcList">
+              <div class="empty-card">
+                <div class="empty-icon">
+                  <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#7aa8d6" stroke-width="1.7" stroke-linecap="round">
+                    <path d="M12 3v12M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/>
+                    <path d="M5 11a7 7 0 0 0 14 0M12 18v3M8.5 21h7"/>
+                  </svg>
+                </div>
+                <p class="empty-title">等待音频输入</p>
+                <p class="empty-desc">点击下方「开始说话」，或上传一段音频文件</p>
+              </div>
+            </div>
+          </div>
+          <div class="sub-divider" aria-hidden="true"></div>
+          <div class="sub-col">
+            <div class="sub-col-head">
+              <span class="col-dot tgt"></span>
+              <span id="tgtColTitle">翻译译文 target_text</span>
+            </div>
+            <div class="sub-list" id="tgtList">
+              <div class="empty-card">
+                <div class="empty-icon">
+                  <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#7aa8d6" stroke-width="1.7" stroke-linecap="round">
+                    <path d="M4 6h11M9 4v2c0 4-2 7-5 8"/>
+                    <path d="M8 10c0 3 3 6 7 7"/>
+                    <path d="M13 20l4-10 4 10M14.5 17h5"/>
+                  </svg>
+                </div>
+                <p class="empty-title">译文将在这里逐句出现</p>
+                <p class="empty-desc">稳态结果（sentence_end=true）会加深显示</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 控制条 -->
+    <section class="card console">
+      <div class="card-body">
+        <div class="console-row">
+          <button class="btn-primary" id="micBtn" type="button">
+            <span class="mic-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8.5 21h7"/>
+              </svg>
+            </span>
+            <span id="micLabel">开始说话</span>
+          </button>
+
+          <button class="btn-second" id="fileBtn" type="button">上传音频</button>
+          <input type="file" id="fileInput" accept="audio/*,.wav,.mp3,.m4a,.pcm" hidden>
+
+          <button class="btn-second" id="mockBtn" type="button">演示模式</button>
+
+          <div class="meter-wrap" title="输入电平">
+            <div class="meter"><div class="meter-fill" id="meterFill"></div></div>
+            <span class="meter-txt" id="meterTxt">0%</span>
+          </div>
+
+          <div class="vid" title="voice_id">
+            <span>voice_id</span>
+            <code id="voiceIdTxt">—</code>
+          </div>
+        </div>
+        <div class="console-status" id="statusLine">准备就绪。填入密钥后点「开始说话」直连接口；无密钥可先点「演示模式」看效果。</div>
+      </div>
+    </section>
+
+    <!-- 调试 -->
+    <section class="card">
+      <div class="card-head clickable" id="logHead">
+        <h2>请求与报文</h2>
+        <span class="chev" id="logChev">展开</span>
+      </div>
+      <div class="card-body collapsed" id="logBody">
+        <div class="field">
+          <label>握手 URL（签名与 SecretID 已脱敏）</label>
+          <pre class="url-box" id="urlBox">尚未发起连接</pre>
+        </div>
+        <div class="field">
+          <label>WebSocket 消息流</label>
+          <div class="log" id="logBox"><div class="log-empty">暂无报文</div></div>
+        </div>
+        <div class="row-2">
+          <span class="sub">文本消息为 JSON；二进制消息为 PCM/MP3 合成音频分片。</span>
+          <button class="btn-ghost sm" id="logClear" type="button">清空日志</button>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <div class="foot-row">
+        <span>能力：9 语种互译 · 边说边译 · 译文语音合成 · 单账号默认 5 路并发</span>
+        <span class="foot-sep">|</span>
+        <a href="https://cloud.tencent.com/document/product/1093/127565" target="_blank" rel="noopener">实时语音翻译（WebSocket）接口文档</a>
+        <span class="foot-sep">|</span>
+        <a href="https://buy.cloud.tencent.com/asr" target="_blank" rel="noopener">资源包与并发扩容</a>
+      </div>
+      <div class="foot-note">本页为能力演示用的纯前端 Demo，不存储任何音频与密钥。实际集成请参考官方 Go / Python / Java SDK。</div>
+    </footer>
+
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
