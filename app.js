@@ -294,12 +294,42 @@ function escapeHtml(s) {
 }
 
 /* ================= TTS 播放 ================= */
+/* speed 参数 → 实际倍速（按官方对照表线性插值） */
+function speedToRate(v) {
+  const pts = [[-2, 0.6], [-1, 0.8], [0, 1.0], [1, 1.2], [2, 1.5], [6, 2.5]];
+  if (v <= -2) return 0.6;
+  if (v >= 6) return 2.5;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
+    if (v >= x0 && v <= x1) return y0 + (y1 - y0) * (v - x0) / (x1 - x0);
+  }
+  return 1;
+}
+function volToGain(v) { return v <= 0 ? Math.max(0, 1 + v / 20) : 1; }
+
+/* 在用户手势内提前建好 AudioContext 并 resume，规避浏览器自动播放策略 */
+function unlockAudio() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!S.playCtx) S.playCtx = new AC();
+    if (S.playCtx.state === 'suspended') S.playCtx.resume().catch(() => {});
+    S.playAt = S.playCtx.currentTime + 0.2;
+  } catch (e) {}
+}
+
 function playPcm(ab) {
-  if (!S.playCtx) { S.playCtx = new (window.AudioContext || window.webkitAudioContext)(); S.playAt = S.playCtx.currentTime + 0.2; }
+  if (!S.playCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    S.playCtx = new AC();
+    S.playAt = S.playCtx.currentTime + 0.2;
+  }
+  if (S.playCtx.state === 'suspended') S.playCtx.resume().catch(() => {});
   const i16 = new Int16Array(ab);
   if (!i16.length) return;
   const f32 = new Float32Array(i16.length);
-  for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 32768;
+  const g = volToGain(parseFloat(el.volume.value) || 0);
+  for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 32768 * g;
   const buf = S.playCtx.createBuffer(1, f32.length, S.ttsRate);
   buf.copyToChannel ? buf.copyToChannel(f32, 0) : buf.getChannelData(0).set(f32);
   const src = S.playCtx.createBufferSource();
@@ -314,7 +344,82 @@ function playMp3() {
   const blob = new Blob(S.mp3Chunks, { type: 'audio/mpeg' });
   S.mp3Chunks = [];
   const a = new Audio(URL.createObjectURL(blob));
+  a.volume = volToGain(parseFloat(el.volume.value) || 0);
   a.play().catch(() => {});
+}
+
+/* ---- 演示模式的译文播报（本地预渲染音频，无需密钥） ---- */
+const MOCK_TTS_BASE = 'assets/tts/mock-';
+const mockAudioCache = {};
+const mockQueue = [];
+let mockAudioEl = null;
+let mockPlaying = false;
+
+function preloadMockTts() {
+  for (let i = 1; i <= 5; i++) {
+    if (mockAudioCache[i]) continue;
+    try {
+      const a = new Audio(`${MOCK_TTS_BASE}${i}.m4a`);
+      a.preload = 'auto';
+      a.load();
+      mockAudioCache[i] = a;
+    } catch (e) {}
+  }
+}
+function stopMockTts() {
+  mockQueue.length = 0;
+  mockPlaying = false;
+  if (mockAudioEl) { try { mockAudioEl.pause(); mockAudioEl.currentTime = 0; } catch (e) {} mockAudioEl = null; }
+  if (window.speechSynthesis) { try { speechSynthesis.cancel(); } catch (e) {} }
+}
+function speakFallback(text, rate, vol) {
+  if (!window.speechSynthesis) return false;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-US';
+    u.rate = Math.min(2, Math.max(0.5, rate));
+    u.volume = vol;
+    u.onend = () => { mockPlaying = false; pumpMockTts(); };
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+    return true;
+  } catch (e) { return false; }
+}
+/* 入队：真实接口的合成音频是按句顺序排队播放的，这里保持一致 */
+function playMockTts(n, text) {
+  if (!el.enableTts.checked) return;
+  if (!TTS_OK_TARGET.includes(el.target.value)) {
+    log(T.bin, `演示模式：目标语言 ${el.target.value} 不支持语音合成，跳过播报`);
+    return;
+  }
+  mockQueue.push({ n, text });
+  pumpMockTts();
+}
+function pumpMockTts() {
+  if (mockPlaying || !mockQueue.length) return;
+  const { n, text } = mockQueue.shift();
+  const rate = speedToRate(parseFloat(el.speed.value) || 0);
+  const vol = volToGain(parseFloat(el.volume.value) || 0);
+  const a = mockAudioCache[n] || new Audio(`${MOCK_TTS_BASE}${n}.m4a`);
+  mockAudioCache[n] = a;
+  mockAudioEl = a;
+  mockPlaying = true;
+  try { a.currentTime = 0; } catch (e) {}
+  a.playbackRate = rate;
+  a.volume = vol;
+  a.onended = () => { mockPlaying = false; pumpMockTts(); };
+  a.onerror = () => {
+    log(T.err, '演示音频加载失败，降级用浏览器本地语音播报');
+    mockPlaying = false;
+    if (!speakFallback(text, rate, vol)) pumpMockTts();
+  };
+  a.play()
+    .then(() => log(T.bin, `演示模式：播报第 ${n} 句译文（${rate.toFixed(2)}x 倍速，队列待播 ${mockQueue.length} 句）`))
+    .catch(() => {
+      mockPlaying = false;
+      if (speakFallback(text, rate, vol)) log(T.bin, `演示模式：已降级用浏览器本地语音播报第 ${n} 句`);
+      else { log(T.err, '浏览器拒绝自动播放音频，请再点一次「演示模式」'); pumpMockTts(); }
+    });
 }
 
 /* ================= WebSocket ================= */
@@ -583,6 +688,8 @@ function prepare(mode) {
   S.mode = mode; S.running = true;
   S.voiceId = uuid(); S.firstAt = 0; S.audioMs = 0; S.pcmTail = new Int16Array(0);
   S.mp3Chunks = []; S.playCtx = null; S.playAt = 0;
+  stopMockTts();
+  if (el.enableTts.checked) unlockAudio();   // 必须在点击手势内创建并 resume
   el.voiceIdTxt.textContent = S.voiceId;
   clearSubs();
   S.startAt = performance.now();
@@ -601,6 +708,7 @@ function finishUI() {
 }
 function stopAll(silent) {
   if (S.mockTimer) { clearInterval(S.mockTimer); S.mockTimer = null; }
+  stopMockTts();
   stopCapture();
   if (S.ws && S.ws.readyState === 1 && !silent) sendEnd();
   finishUI();
@@ -675,7 +783,7 @@ function mockRun() {
   const tick = () => {
     if (idx >= list.length) {
       clearInterval(S.mockTimer); S.mockTimer = null;
-      status(`演示模式播放完毕：${S.finalSentences} 句双语字幕。实际链路为 WebSocket 直连，可现场实时体验。`, 'ok');
+      status(`演示模式播放完毕：${S.finalSentences} 句双语字幕${el.enableTts.checked && TTS_OK_TARGET.includes(el.target.value) ? '，译文语音已播报' : ''}。实际链路为 WebSocket 直连，可现场实时体验。`, 'ok');
       setConn('', '未连接');
       finishUI();
       return;
@@ -699,7 +807,7 @@ function mockRun() {
     el.mDuration.innerHTML = `${(S.audioMs / 1000).toFixed(1)}<i>s</i>`;
     const pct = 30 + Math.round(Math.random() * 55);
     el.meterFill.style.width = pct + '%'; el.meterTxt.textContent = pct + '%';
-    if (end) { t0 = t0 + step * 260 + 320; idx++; step = 0; sid = uuid(); }
+    if (end) { playMockTts(idx + 1, item.t); t0 = t0 + step * 260 + 320; idx++; step = 0; sid = uuid(); }
   };
   S.mockTimer = setInterval(tick, 230);
 }
@@ -709,9 +817,11 @@ el.mockBtn.onclick = () => {
   el.mockBtn.classList.add('on');
   el.voiceIdTxt.textContent = uuid();
   setConn('on', '演示模式');
+  if (el.enableTts.checked) preloadMockTts();
   el.urlBox.textContent = `wss://${HOST}${PATH}<AppID>?expired=…&nonce=…&secretid=AKID******&source=zh&target=en&timestamp=…&trans_model=hunyuan-translation-lite&voice_format=1&voice_id=…&signature=******\n\n（演示模式为本地脚本回放，不产生真实请求与计费）`;
   log(T.down, '演示模式启动：本地脚本回放，不发起真实请求');
-  status('演示模式：正在回放一段「中 → 英」边说边译效果。点「开始说话」可接入真实链路现场实时体验。');
+  const ttsOn = el.enableTts.checked && TTS_OK_TARGET.includes(el.target.value);
+  status('演示模式：正在回放一段「中 → 英」边说边译效果' + (ttsOn ? '，每句定稿后会自动播报译文语音。' : '。打开「译文语音合成」可同时听到译文播报。'));
   mockRun();
 };
 
@@ -733,6 +843,7 @@ document.querySelectorAll('.preset').forEach(btn => {
     el.transModel.value = p.model;
     el.enableTts.checked = p.tts;
     el.ttsBody.classList.toggle('collapsed', !p.tts);
+    if (p.tts) preloadMockTts();
     if (p.voice) el.voiceType.value = p.voice;
     el.vad.value = p.vad;
     refreshLangUI();
@@ -756,6 +867,7 @@ el.clearKey.onclick = () => {
 };
 el.enableTts.onchange = () => {
   el.ttsBody.classList.toggle('collapsed', !el.enableTts.checked);
+  if (el.enableTts.checked) preloadMockTts();
   refreshLangUI();
 };
 el.voiceType.onchange = () => el.customVoiceWrap.classList.toggle('hidden', el.voiceType.value !== '__custom');
